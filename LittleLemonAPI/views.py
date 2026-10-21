@@ -5,6 +5,7 @@ from rest_framework.response import Response
 
 from .filters import MenuItemFilter
 from .models import MenuItem
+from .pagination import LittleLemonPagination
 from .permissions import DELIVERY_CREW_GROUP, MANAGER_GROUP, IsManager
 from .serializers import GroupUserSerializer, MenuItemSerializer
 
@@ -44,6 +45,10 @@ class BaseGroupUserViewSet(viewsets.ViewSet):
 
     def list(self, request):
         users = User.objects.filter(groups__name=self.group_name).order_by("id")
+        paginator = LittleLemonPagination()
+        page = paginator.paginate_queryset(users, request)
+        if page is not None:
+            return paginator.get_paginated_response(GroupUserSerializer(page, many=True).data)
         return Response(GroupUserSerializer(users, many=True).data)
 
     def create(self, request):
@@ -74,15 +79,23 @@ class BaseGroupUserViewSet(viewsets.ViewSet):
         )
 
     def _resolve_user(self, payload):
+        # `request.data` is whatever the client sent: a list or a string body
+        # would blow up on `.get()`, so anything but a mapping is "not found".
+        if not isinstance(payload, dict):
+            return None
         username = payload.get("username")
         user_id = payload.get("user_id", payload.get("id"))
         if username:
             return User.objects.filter(username=str(username)).first()
         if user_id is not None:
-            user_id = str(user_id)
-            if user_id.isdigit():
-                return User.objects.filter(pk=int(user_id)).first()
-            return User.objects.filter(username=user_id).first()
+            reference = str(user_id)
+            # Only ASCII digits can be a user id: `int()` converts them without
+            # raising, while `str.isdigit()` is also true for Unicode ordinal
+            # digits such as '²' that `int()` rejects with a ValueError.
+            # Anything else is treated as a username.
+            if reference.isascii() and reference.isdigit():
+                return User.objects.filter(pk=int(reference)).first()
+            return User.objects.filter(username=reference).first()
         return None
 
 
