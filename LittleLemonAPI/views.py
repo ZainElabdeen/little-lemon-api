@@ -282,6 +282,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Response({"detail": f"Order {order_id} was deleted."})
 
     def _validate_crew_payload(self, request):
+        # `request.data` is whatever the parser produced: a JSON body of
+        # `[1, 2, 3]` (or a bare string or number) is a list/str, which has
+        # no `.keys()` - reading them unguarded would turn a bad payload into
+        # a 500 instead of a 400.
+        if not isinstance(request.data, dict):
+            raise ValidationError(
+                {"detail": "Expected an object with a 'status' field."}
+            )
         offending = sorted(set(request.data.keys()) - {"status"})
         if offending:
             raise ValidationError(
