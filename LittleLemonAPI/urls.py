@@ -1,7 +1,12 @@
 from django.urls import include, path
 
 from .routers import LittleLemonRouter
-from .views import DeliveryCrewUserViewSet, ManagerUserViewSet, MenuItemViewSet
+from .views import (
+    CartItemView,
+    DeliveryCrewUserViewSet,
+    ManagerUserViewSet,
+    MenuItemViewSet,
+)
 
 router = LittleLemonRouter()
 router.register("menu-items", MenuItemViewSet, basename="menu-items")
@@ -10,4 +15,6 @@ router.register("groups/delivery-crew/users", DeliveryCrewUserViewSet, basename=
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("cart/menu-items", CartItemView.as_view(), name="cart-items"),
+    path("cart/menu-items/", CartItemView.as_view(), name="cart-items-slash"),
 ]

@@ -2,12 +2,13 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from rest_framework import permissions, status, viewsets
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .filters import MenuItemFilter
-from .models import MenuItem
+from .models import CartItem, MenuItem
 from .pagination import LittleLemonPagination
-from .permissions import DELIVERY_CREW_GROUP, MANAGER_GROUP, IsManager
-from .serializers import GroupUserSerializer, MenuItemSerializer
+from .permissions import DELIVERY_CREW_GROUP, MANAGER_GROUP, IsCustomer, IsManager
+from .serializers import CartItemSerializer, GroupUserSerializer, MenuItemSerializer
 
 User = get_user_model()
 
@@ -105,3 +106,40 @@ class ManagerUserViewSet(BaseGroupUserViewSet):
 
 class DeliveryCrewUserViewSet(BaseGroupUserViewSet):
     group_name = DELIVERY_CREW_GROUP
+
+
+class CartItemView(APIView):
+    """The authenticated customer's cart. Collection-level only — no {id} route."""
+
+    permission_classes = [IsCustomer]
+
+    def get(self, request):
+        items = CartItem.objects.filter(user=request.user).select_related("menu_item")
+        return self._paginated(items, request)
+
+    def post(self, request):
+        serializer = CartItemSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        menu_item = serializer.validated_data["menu_item"]
+        cart_item = CartItem.objects.create(
+            user=request.user,
+            menu_item=menu_item,
+            quantity=serializer.validated_data["quantity"],
+            unit_price=menu_item.price,
+        )
+        return Response(
+            CartItemSerializer(cart_item).data, status=status.HTTP_201_CREATED
+        )
+
+    def delete(self, request):
+        deleted, _ = CartItem.objects.filter(user=request.user).delete()
+        return Response({"detail": "Cart cleared.", "deleted": deleted})
+
+    def _paginated(self, queryset, request):
+        paginator = LittleLemonPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        if page is not None:
+            return paginator.get_paginated_response(
+                CartItemSerializer(page, many=True).data
+            )
+        return Response(CartItemSerializer(queryset, many=True).data)
