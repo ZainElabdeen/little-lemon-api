@@ -1,10 +1,14 @@
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from rest_framework import permissions, status, viewsets
 from rest_framework.response import Response
 
 from .filters import MenuItemFilter
 from .models import MenuItem
-from .permissions import IsManager
-from .serializers import MenuItemSerializer
+from .permissions import DELIVERY_CREW_GROUP, MANAGER_GROUP, IsManager
+from .serializers import GroupUserSerializer, MenuItemSerializer
+
+User = get_user_model()
 
 
 class MenuItemViewSet(viewsets.ModelViewSet):
@@ -30,3 +34,61 @@ class MenuItemViewSet(viewsets.ModelViewSet):
             {"detail": f"Menu item {item_id} was deleted."},
             status=status.HTTP_200_OK,
         )
+
+
+class BaseGroupUserViewSet(viewsets.ViewSet):
+    """Lists, adds and removes the members of one Django group."""
+
+    group_name = ""
+    permission_classes = [IsManager]
+
+    def list(self, request):
+        users = User.objects.filter(groups__name=self.group_name).order_by("id")
+        return Response(GroupUserSerializer(users, many=True).data)
+
+    def create(self, request):
+        user = self._resolve_user(request.data)
+        if user is None:
+            return Response(
+                {"detail": "Provide a valid 'username' or 'user_id' in the payload."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if user.groups.filter(name=self.group_name).exists():
+            return Response(
+                {"detail": f"{user.username} is already in the {self.group_name} group."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.groups.add(Group.objects.get(name=self.group_name))
+        return Response(GroupUserSerializer(user).data, status=status.HTTP_201_CREATED)
+
+    def destroy(self, request, pk=None):
+        user = self._resolve_user({"user_id": pk})
+        if user is None or not user.groups.filter(name=self.group_name).exists():
+            return Response(
+                {"detail": f"No user in the {self.group_name} group matches {pk!r}."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        user.groups.remove(Group.objects.get(name=self.group_name))
+        return Response(
+            {"detail": f"{user.username} was removed from the {self.group_name} group."}
+        )
+
+    def _resolve_user(self, payload):
+        username = payload.get("username")
+        user_id = payload.get("user_id", payload.get("id"))
+        if username:
+            return User.objects.filter(username=str(username)).first()
+        if user_id is not None:
+            user_id = str(user_id)
+            if user_id.isdigit():
+                return User.objects.filter(pk=int(user_id)).first()
+            return User.objects.filter(username=user_id).first()
+        return None
+
+
+class ManagerUserViewSet(BaseGroupUserViewSet):
+    group_name = MANAGER_GROUP
+
+
+class DeliveryCrewUserViewSet(BaseGroupUserViewSet):
+    group_name = DELIVERY_CREW_GROUP
