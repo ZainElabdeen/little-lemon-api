@@ -153,3 +153,17 @@ REST_FRAMEWORK = {
         "login": "30/minute",
     },
 }
+
+# Djoser renders our serializers instead of its own. The dotted paths are
+# resolved lazily, so they are safe to write here.
+DJOSER = {
+    "SEND_ACTIVATION_EMAIL": False,
+    "SEND_CONFIRMATION_EMAIL": False,
+    "LOGOUT_ON_PASSWORD_CHANGE": True,
+    "SERIALIZERS": {
+        "user": "LittleLemonAPI.serializers.LittleLemonUserSerializer",
+        "current_user": "LittleLemonAPI.serializers.LittleLemonUserSerializer",
+        "user_create": "LittleLemonAPI.serializers.LittleLemonCreateUserSerializer",
+        "token": "LittleLemonAPI.serializers.LittleLemonTokenSerializer",
+    },
+}

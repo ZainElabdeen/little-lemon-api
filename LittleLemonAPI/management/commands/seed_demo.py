@@ -17,11 +17,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from LittleLemonAPI.models import CartItem, MenuItem, Order, OrderItem
-
-# Group names. Task 4 moves these literals to LittleLemonAPI.permissions
-# (MANAGER_GROUP / DELIVERY_CREW_GROUP) and this module switches to that import.
-MANAGER_GROUP = "manager"
-DELIVERY_CREW_GROUP = "delivery_crew"
+from LittleLemonAPI.permissions import DELIVERY_CREW_GROUP, MANAGER_GROUP
 
 # username, password, group names, is_staff, is_superuser
 SEED_USERS = (
