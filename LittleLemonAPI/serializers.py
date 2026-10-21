@@ -83,8 +83,11 @@ class DeliveryCrewField(serializers.Field):
         # A numeric reference is a user id, anything else is a username.
         # `.filter(...).first()` is used deliberately: `get(pk=...)` raises
         # ValueError on a non-numeric pk, which would turn a bad payload into
-        # a 500 instead of a 400.
-        if reference.isdigit():
+        # a 500 instead of a 400. Only ASCII digits can be a user id:
+        # `str.isdigit()` is also true for Unicode ordinal digits such as '²'
+        # that `int()` rejects with a ValueError, so those fall through to
+        # the username lookup and end as the ordinary "no such user" error.
+        if reference.isascii() and reference.isdigit():
             user = User.objects.filter(pk=int(reference)).first()
         else:
             user = User.objects.filter(username=reference).first()

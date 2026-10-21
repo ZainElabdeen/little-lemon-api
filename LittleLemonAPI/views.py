@@ -1,14 +1,33 @@
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.db import transaction
+from django.http import Http404
+from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status, viewsets
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .filters import MenuItemFilter
-from .models import CartItem, MenuItem
+from .filters import MenuItemFilter, OrderFilter
+from .models import CartItem, MenuItem, Order, OrderItem
 from .pagination import LittleLemonPagination
-from .permissions import DELIVERY_CREW_GROUP, MANAGER_GROUP, IsCustomer, IsManager
-from .serializers import CartItemSerializer, GroupUserSerializer, MenuItemSerializer
+from .permissions import (
+    DELIVERY_CREW_GROUP,
+    MANAGER_GROUP,
+    IsCustomer,
+    IsDeliveryCrew,
+    IsManager,
+    is_delivery_crew,
+    is_manager,
+)
+from .serializers import (
+    CartItemSerializer,
+    GroupUserSerializer,
+    MenuItemSerializer,
+    OrderSerializer,
+)
 
 User = get_user_model()
 
@@ -143,3 +162,131 @@ class CartItemView(APIView):
     def delete(self, request):
         deleted, _ = CartItem.objects.filter(user=request.user).delete()
         return Response({"detail": "Cart cleared.", "deleted": deleted})
+
+
+class OrderViewSet(viewsets.ModelViewSet):
+    """Customers place and read their own orders, managers read all and assign
+    delivery crew, delivery crew read their assignments and update status only."""
+
+    serializer_class = OrderSerializer
+    filterset_class = OrderFilter
+    ordering_fields = ["id", "status", "total", "created_at"]
+    ordering = ["-created_at"]
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [IsCustomer()]
+        if self.action == "destroy":
+            return [IsManager()]
+        if self.action in ("update", "partial_update"):
+            # Order writes are role-gated: a manager may write anything, a
+            # delivery crew member may write the status of an order assigned
+            # to them, and a customer may not write any order at all - not
+            # even one of their own. An anonymous caller is turned into a 401
+            # by DRF because no authenticator succeeded.
+            if is_delivery_crew(self.request.user):
+                return [IsDeliveryCrew()]
+            return [IsManager()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        user = self.request.user
+        if is_manager(user):
+            return Order.objects.all()
+        if is_delivery_crew(user):
+            return Order.objects.filter(delivery_crew=user)
+        return Order.objects.filter(user=user)
+
+    def get_object(self):
+        # Look up across all orders, not the role-scoped queryset, so a missing
+        # order is 404 while an existing but forbidden one is 403.
+        try:
+            order = get_object_or_404(Order, pk=self.kwargs["pk"])
+        except (TypeError, ValueError):
+            # A pk that is not an integer (the router's lookup pattern accepts
+            # any non-slash characters) raises out of the query, not a
+            # "not found" - a missing resource must still be a 404. The
+            # message is the one `get_object_or_404` uses, so a missing order
+            # reads the same however the id was mangled.
+            raise Http404(
+                f"No {Order._meta.object_name} matches the given query."
+            ) from None
+        self.check_order_access(order)
+        return order
+
+    def check_order_access(self, order):
+        user = self.request.user
+        if is_manager(user):
+            return
+        if is_delivery_crew(user):
+            if order.delivery_crew_id != user.id:
+                raise PermissionDenied(
+                    "This order is assigned to a different delivery crew member."
+                )
+            return
+        if order.user_id != user.id:
+            raise PermissionDenied("This order does not belong to you.")
+
+    def create(self, request, *args, **kwargs):
+        cart_items = list(
+            CartItem.objects.filter(user=request.user).select_related("menu_item")
+        )
+        if not cart_items:
+            return Response(
+                {"detail": "Your cart is empty. Add items before placing an order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        with transaction.atomic():
+            order = Order.objects.create(user=request.user, status=Order.PENDING)
+            order_items = []
+            total = Decimal("0.00")
+            for cart_item in cart_items:
+                total += cart_item.unit_price * cart_item.quantity
+                order_items.append(
+                    OrderItem(
+                        order=order,
+                        menu_item=cart_item.menu_item,
+                        quantity=cart_item.quantity,
+                        price=cart_item.unit_price,
+                    )
+                )
+            OrderItem.objects.bulk_create(order_items)
+            order.total = total
+            order.save(update_fields=["total", "updated_at"])
+            CartItem.objects.filter(user=request.user).delete()
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        order = self.get_object()
+        if is_delivery_crew(request.user) and request.method == "PUT":
+            # Only `PUT` is rejected outright: DRF's `partial_update` delegates
+            # to this method, so a blanket check would also reject the crew's
+            # status-only `PATCH` with a 400.
+            raise ValidationError(
+                {"detail": "Delivery crew may only PATCH the 'status' field."}
+            )
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        order = self.get_object()
+        if is_delivery_crew(request.user):
+            self._validate_crew_payload(request)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        order = self.get_object()
+        # The primary key is read before the delete, because Django clears it
+        # on the deleted instance.
+        order_id = order.id
+        order.delete()
+        return Response({"detail": f"Order {order_id} was deleted."})
+
+    def _validate_crew_payload(self, request):
+        offending = sorted(set(request.data.keys()) - {"status"})
+        if offending:
+            raise ValidationError(
+                {
+                    "detail": "Delivery crew may only update the 'status' field. "
+                    f"Rejected: {', '.join(offending)}."
+                }
+            )
