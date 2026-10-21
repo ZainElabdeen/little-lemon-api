@@ -13,6 +13,19 @@ from .serializers import CartItemSerializer, GroupUserSerializer, MenuItemSerial
 User = get_user_model()
 
 
+def paginated_response(queryset, serializer_class, request):
+    """The standard DRF pagination envelope for a list endpoint (spec §5.4).
+
+    Every list endpoint in this API answers with the same shape, so the
+    pagination glue lives here once instead of being copy-pasted per view.
+    """
+    paginator = LittleLemonPagination()
+    page = paginator.paginate_queryset(queryset, request)
+    if page is not None:
+        return paginator.get_paginated_response(serializer_class(page, many=True).data)
+    return Response(serializer_class(queryset, many=True).data)
+
+
 class MenuItemViewSet(viewsets.ModelViewSet):
     """Menu items: readable by any authenticated user, writable by managers only."""
 
@@ -46,11 +59,7 @@ class BaseGroupUserViewSet(viewsets.ViewSet):
 
     def list(self, request):
         users = User.objects.filter(groups__name=self.group_name).order_by("id")
-        paginator = LittleLemonPagination()
-        page = paginator.paginate_queryset(users, request)
-        if page is not None:
-            return paginator.get_paginated_response(GroupUserSerializer(page, many=True).data)
-        return Response(GroupUserSerializer(users, many=True).data)
+        return paginated_response(users, GroupUserSerializer, request)
 
     def create(self, request):
         user = self._resolve_user(request.data)
@@ -115,7 +124,7 @@ class CartItemView(APIView):
 
     def get(self, request):
         items = CartItem.objects.filter(user=request.user).select_related("menu_item")
-        return self._paginated(items, request)
+        return paginated_response(items, CartItemSerializer, request)
 
     def post(self, request):
         serializer = CartItemSerializer(data=request.data)
@@ -134,12 +143,3 @@ class CartItemView(APIView):
     def delete(self, request):
         deleted, _ = CartItem.objects.filter(user=request.user).delete()
         return Response({"detail": "Cart cleared.", "deleted": deleted})
-
-    def _paginated(self, queryset, request):
-        paginator = LittleLemonPagination()
-        page = paginator.paginate_queryset(queryset, request)
-        if page is not None:
-            return paginator.get_paginated_response(
-                CartItemSerializer(page, many=True).data
-            )
-        return Response(CartItemSerializer(queryset, many=True).data)
