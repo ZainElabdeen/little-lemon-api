@@ -5,9 +5,11 @@ from django.contrib.auth.models import Group
 from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404
+from djoser import views as djoser_views
 from rest_framework import permissions, status, viewsets
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, UserRateThrottle
 from rest_framework.views import APIView
 
 from .filters import MenuItemFilter, OrderFilter
@@ -298,3 +300,18 @@ class OrderViewSet(viewsets.ModelViewSet):
                     f"Rejected: {', '.join(offending)}."
                 }
             )
+
+
+class LittleLemonUserViewSet(djoser_views.UserViewSet):
+    """Djoser's user viewset, mounted on our router so `me` lands on
+    /api/users/users/me/ and answers with and without a trailing slash."""
+
+
+class LittleLemonTokenCreateView(djoser_views.TokenCreateView):
+    throttle_scope = "login"
+    throttle_classes = [AnonRateThrottle, UserRateThrottle, ScopedRateThrottle]
+
+
+class LittleLemonTokenLogoutView(djoser_views.TokenDestroyView):
+    throttle_scope = "login"
+    throttle_classes = [AnonRateThrottle, UserRateThrottle, ScopedRateThrottle]
