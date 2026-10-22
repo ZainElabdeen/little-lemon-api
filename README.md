@@ -621,4 +621,4 @@ serves both forms, so nothing is registered twice and no request is ever redirec
 **Endpoint reference** table lists the status code observed for every request × role cell, the
 **Peer-review checklist** lists the observed code for each of the 21 grading criteria, and every
 example in this document was executed against the running server before it was written down. The
-code is deliberately comment-free, so this README and the design document are the documentation.
+code is deliberately comment-free, so this README and the design notes in it are the documentation.

@@ -174,6 +174,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         if self.action == "destroy":
             return [IsManager()]
         if self.action in ("update", "partial_update"):
+            if is_manager(self.request.user):
+                return [IsManager()]
             if is_delivery_crew(self.request.user):
                 return [IsDeliveryCrew()]
             return [IsManager()]
@@ -182,10 +184,10 @@ class OrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if is_manager(user):
-            return Order.objects.all()
+            return Order.objects.all().select_related("delivery_crew")
         if is_delivery_crew(user):
-            return Order.objects.filter(delivery_crew=user)
-        return Order.objects.filter(user=user)
+            return Order.objects.filter(delivery_crew=user).select_related("delivery_crew")
+        return Order.objects.filter(user=user).select_related("delivery_crew")
 
     def get_object(self):
         try:
@@ -219,12 +221,18 @@ class OrderViewSet(viewsets.ModelViewSet):
                 {"detail": "Your cart is empty. Add items before placing an order."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        total = Decimal("0.00")
+        for cart_item in cart_items:
+            total += cart_item.unit_price * cart_item.quantity
+        if total > Decimal("999999.99"):
+            return Response(
+                {"detail": "Order total exceeds the maximum allowed amount."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         with transaction.atomic():
             order = Order.objects.create(user=request.user, status=Order.PENDING)
             order_items = []
-            total = Decimal("0.00")
             for cart_item in cart_items:
-                total += cart_item.unit_price * cart_item.quantity
                 order_items.append(
                     OrderItem(
                         order=order,
@@ -275,7 +283,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
 
 class LittleLemonUserViewSet(djoser_views.UserViewSet):
-    ""
+    pass
 
 
 class LittleLemonTokenCreateView(djoser_views.TokenCreateView):
