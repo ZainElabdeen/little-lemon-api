@@ -4,7 +4,7 @@ from django.contrib.auth.models import Group, User
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from LittleLemonAPI.models import CartItem, MenuItem, Order, OrderItem
+from LittleLemonAPI.models import CartItem, Category, MenuItem, Order, OrderItem
 from LittleLemonAPI.permissions import DELIVERY_CREW_GROUP, MANAGER_GROUP
 
 SEED_USERS = (
@@ -16,6 +16,15 @@ SEED_USERS = (
     ("crew1", "CrewPass123!", (DELIVERY_CREW_GROUP,), False, False),
     ("crew2", "CrewPass123!", (DELIVERY_CREW_GROUP,), False, False),
 )
+
+SEED_CATEGORIES = (
+    ("salads", "Salads"),
+    ("mains", "Mains"),
+    ("desserts", "Desserts"),
+    ("drinks", "Drinks"),
+)
+
+FEATURED_ITEM = "Greek Salad"
 
 SEED_MENU_ITEMS = (
     (
@@ -67,7 +76,7 @@ class Command(BaseCommand):
             dest="reset",
             help=(
                 "Delete existing app data (cart items, order items, orders, menu "
-                "items and non-superuser users) before seeding."
+                "items, categories and non-superuser users) before seeding."
             ),
         )
 
@@ -94,17 +103,20 @@ class Command(BaseCommand):
         order_items = OrderItem.objects.count()
         orders = Order.objects.count()
         menu_items = MenuItem.objects.count()
+        categories = Category.objects.count()
         users = User.objects.filter(is_superuser=False).count()
 
         CartItem.objects.all().delete()
         OrderItem.objects.all().delete()
         Order.objects.all().delete()
         MenuItem.objects.all().delete()
+        Category.objects.all().delete()
         User.objects.filter(is_superuser=False).delete()
 
         self.stdout.write(
             f"Reset: deleted cart items {cart_items}, order items {order_items}, "
-            f"orders {orders}, menu items {menu_items}, non-superuser users {users}."
+            f"orders {orders}, menu items {menu_items}, categories {categories}, "
+            f"non-superuser users {users}."
         )
 
     def _seed_users(self):
@@ -134,6 +146,13 @@ class Command(BaseCommand):
         return created_count, updated_count
 
     def _seed_menu_items(self):
+        categories = {}
+        for slug, title in SEED_CATEGORIES:
+            category, _ = Category.objects.get_or_create(slug=slug)
+            category.title = title
+            category.save()
+            categories[slug] = category
+
         created_count = 0
         updated_count = 0
 
@@ -149,7 +168,8 @@ class Command(BaseCommand):
 
             item.price = price
             item.description = description
-            item.category = category
+            item.category = categories[category]
+            item.featured = name == FEATURED_ITEM
             item.save()
 
             existing.exclude(pk=item.pk).delete()

@@ -1,7 +1,7 @@
 from rest_framework import permissions
 
-MANAGER_GROUP = "manager"
-DELIVERY_CREW_GROUP = "delivery_crew"
+MANAGER_GROUP = "Manager"
+DELIVERY_CREW_GROUP = "Delivery crew"
 
 
 def is_manager(user) -> bool:

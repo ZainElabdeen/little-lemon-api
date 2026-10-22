@@ -1,12 +1,18 @@
 from django.contrib import admin
 
-from .models import CartItem, MenuItem, Order, OrderItem
+from .models import CartItem, Category, MenuItem, Order, OrderItem
+
+
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ("id", "title", "slug")
+    prepopulated_fields = {"slug": ("title",)}
 
 
 class MenuItemAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "price", "category")
-    search_fields = ("name", "category")
-    list_filter = ("category",)
+    list_display = ("id", "name", "price", "category", "featured")
+    list_editable = ("featured",)
+    search_fields = ("name", "category__title")
+    list_filter = ("category", "featured")
 
 
 class CartItemAdmin(admin.ModelAdmin):
@@ -22,6 +28,7 @@ class OrderItemAdmin(admin.ModelAdmin):
     list_display = ("id", "order", "menu_item", "quantity", "price")
 
 
+admin.site.register(Category, CategoryAdmin)
 admin.site.register(MenuItem, MenuItemAdmin)
 admin.site.register(CartItem, CartItemAdmin)
 admin.site.register(Order, OrderAdmin)

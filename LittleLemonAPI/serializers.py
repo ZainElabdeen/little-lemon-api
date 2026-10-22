@@ -1,15 +1,41 @@
 from django.contrib.auth.models import User
+from django.utils.text import slugify
 from djoser.serializers import UserCreateSerializer
 from rest_framework import serializers
 
 from . import permissions
-from .models import CartItem, MenuItem, Order, OrderItem
+from .models import CartItem, Category, MenuItem, Order, OrderItem
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    slug = serializers.SlugField(max_length=100, required=False)
+
+    class Meta:
+        model = Category
+        fields = ["id", "slug", "title"]
+
+    def validate(self, attrs):
+        if not attrs.get("slug") and attrs.get("title"):
+            attrs["slug"] = slugify(attrs["title"])
+        if not attrs.get("slug") and self.instance is None:
+            raise serializers.ValidationError({"title": "A title that yields a slug is required."})
+        slug = attrs.get("slug")
+        if slug and Category.objects.filter(slug=slug).exclude(
+            pk=getattr(self.instance, "pk", None)
+        ).exists():
+            raise serializers.ValidationError({"slug": "A category with this slug already exists."})
+        return attrs
 
 
 class MenuItemSerializer(serializers.ModelSerializer):
+    category = CategorySerializer(read_only=True)
+    category_id = serializers.PrimaryKeyRelatedField(
+        source="category", queryset=Category.objects.all(), write_only=True
+    )
+
     class Meta:
         model = MenuItem
-        fields = ["id", "name", "price", "description", "category"]
+        fields = ["id", "name", "price", "description", "featured", "category", "category_id"]
 
 
 class CartItemSerializer(serializers.ModelSerializer):
@@ -152,7 +178,3 @@ class LittleLemonCreateUserSerializer(UserCreateSerializer):
 class LittleLemonTokenSerializer(serializers.Serializer):
     token = serializers.CharField(source="key", read_only=True)
     auth_token = serializers.CharField(source="key", read_only=True)
-
-
-class CategorySerializer(serializers.Serializer):
-    category = serializers.CharField()

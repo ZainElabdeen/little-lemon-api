@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.db import transaction
+from django.db.models import ProtectedError
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from djoser import views as djoser_views
@@ -13,7 +14,7 @@ from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle, User
 from rest_framework.views import APIView
 
 from .filters import MenuItemFilter, OrderFilter
-from .models import CartItem, MenuItem, Order, OrderItem
+from .models import CartItem, Category, MenuItem, Order, OrderItem
 from .pagination import LittleLemonPagination
 from .permissions import (
     DELIVERY_CREW_GROUP,
@@ -44,10 +45,10 @@ def paginated_response(queryset, serializer_class, request):
 
 
 class MenuItemViewSet(viewsets.ModelViewSet):
-    queryset = MenuItem.objects.all()
+    queryset = MenuItem.objects.select_related("category")
     serializer_class = MenuItemSerializer
     filterset_class = MenuItemFilter
-    ordering_fields = ["id", "name", "price", "category"]
+    ordering_fields = ["id", "name", "price", "featured", "category__title"]
     ordering = ["id"]
 
     def get_permissions(self):
@@ -65,17 +66,32 @@ class MenuItemViewSet(viewsets.ModelViewSet):
         )
 
 
-class CategoryListView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+class CategoryViewSet(viewsets.ModelViewSet):
+    queryset = Category.objects.all()
+    serializer_class = CategorySerializer
+    filterset_fields = ["slug"]
+    ordering_fields = ["id", "slug", "title"]
+    ordering = ["title"]
 
-    def get(self, request):
-        categories = (
-            MenuItem.objects.exclude(category="")
-            .values("category")
-            .distinct()
-            .order_by("category")
+    def get_permissions(self):
+        if self.request.method in permissions.SAFE_METHODS:
+            return [permissions.IsAuthenticated()]
+        return [IsManager()]
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        category_id = instance.pk
+        try:
+            self.perform_destroy(instance)
+        except ProtectedError:
+            return Response(
+                {"detail": "This category still has menu items and cannot be deleted."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {"detail": f"Category {category_id} was deleted."},
+            status=status.HTTP_200_OK,
         )
-        return paginated_response(categories, CategorySerializer, request)
 
 
 class BaseGroupUserViewSet(viewsets.ViewSet):

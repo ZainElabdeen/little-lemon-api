@@ -21,4 +21,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path("api/", include("LittleLemonAPI.urls")),
     path("token/", include("LittleLemonAPI.token_urls")),
+    path("api-auth/", include("rest_framework.urls")),
 ]
