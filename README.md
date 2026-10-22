@@ -29,7 +29,10 @@ CORS) and the root `urls.py` (`/admin/`, `/api/`, `/token/`).
 
 ## Setup and run
 
-Requires Python 3.14 and [pipenv](https://pipenv.pypa.io/).
+Requires Python 3.14 and [pipenv](https://pipenv.pypa.io/). The `curl` examples further down
+pipe their output through [`jq`](https://stedolan.github.io/jq/) for readability — install it
+with `apt install jq` or `brew install jq`. Without `jq` the same calls still work; they just
+print the raw JSON.
 
 ```bash
 pipenv install                                  # create the venv and install the locked deps
@@ -47,6 +50,10 @@ flags, group memberships, prices, descriptions and categories are all reset to t
 Running it after a demo session therefore restores the seeded group memberships (a `manager` who
 was demoted mid-demo is a manager again). It never touches the auto-generated ids of rows that
 already exist.
+
+Reconciliation is keyed on the **name**: accounts are matched by `username` and menu items by
+`name`. A row whose name was changed during a demo is therefore *not* renamed back — the seeder
+creates a fresh row under the seeded name instead, and the renamed row stays behind as an extra.
 
 > Do **not** use `seed_demo --reset`. It deletes and recreates rows, which drifts SQLite's
 > `AUTOINCREMENT` counters and destroys the deterministic seeded ids (users 1–7, menu items 1–6).
@@ -125,9 +132,9 @@ curl -s "$BASE/api/users/users/me/" -H "Authorization: Token $TOKEN"
 ```
 
 ```json
-{"id": 2, "username": "customer1", "email": "customer1@littlelemon.example",
- "first_name": "", "last_name": "", "groups": [],
- "is_manager": false, "is_delivery_crew": false}
+{"id": 4, "username": "manager1", "email": "manager1@littlelemon.example",
+ "first_name": "", "last_name": "", "groups": ["manager"],
+ "is_manager": true, "is_delivery_crew": false}
 ```
 
 `groups`, `is_manager` and `is_delivery_crew` are additions on top of djoser's stock
@@ -184,8 +191,8 @@ no redirect and no error for either form.
 | `GET /api/orders` | 200 (own) | 200 (assigned) | 200 (all) | 401 |
 | `POST /api/orders` | **201** | 403 | 403 | 401 |
 | `GET /api/orders/{id}` | 200 (own) / 403 (someone else's) | 200 (assigned) / 403 (not assigned) | 200 | 401 |
-| `PUT /api/orders/{id}` | 403 | 400 (crew may only PATCH) | **200** | 401 |
-| `PATCH /api/orders/{id}` | 403 | **200** (status only) | **200** | 401 |
+| `PUT /api/orders/{id}` | 403 | 400 (assigned to them; 403 if assigned to another crew member) | **200** | 401 |
+| `PATCH /api/orders/{id}` | 403 | **200** (assigned to them; 403 if not; status only) | **200** | 401 |
 | `DELETE /api/orders/{id}` | 403 | 403 | **200** | 401 |
 
 Notes on the table:
@@ -201,6 +208,10 @@ Notes on the table:
   that group; it removes the user *from the group only* — the account itself survives.
 * A successful `DELETE` answers **200** with a small JSON body (`{"detail": "…"}`), not 204.
 * `GET /api/orders/{id}` distinguishes *not found* (**404**) from *not yours* (**403**).
+* For the delivery-crew rows of `/api/orders/{id}` the **access check runs first**: a crew member
+  who is not the assigned crew member gets **403** for `GET`, `PUT` and `PATCH` alike, before any
+  payload rule is applied. Only on an order assigned to them does `PUT` become the **400**
+  (`"Delivery crew may only PATCH the 'status' field."`) and `PATCH` the **200**.
 
 ### Request and response bodies
 
@@ -343,7 +354,7 @@ a burst of login attempts from one client is the thing that trips it.
 | 201 | a resource was created (`POST /api/users`, `POST /api/menu-items`, `POST /api/cart/menu-items`, `POST /api/orders`, `POST /api/groups/.../users`) |
 | 204 | the token was deleted (`POST /token/logout/`) — no body |
 | 400 | validation failed: bad body, unknown `menu_item_id`, empty cart at checkout, a crew member sending a field other than `status`, a user that is already in the group, an unknown user in the payload |
-| 401 | **not authenticated** — no token, a bad token, a logged-out token, or wrong credentials |
+| 401 | **not authenticated** — no token, a bad token, or a logged-out token |
 | 403 | **authenticated but not allowed** — e.g. a customer trying to create a menu item, a crew member reading the cart, a customer reading somebody else's order |
 | 404 | no such resource — an unknown id, or a group member that is not in the group |
 | 405 | the verb is not defined for that route (e.g. `DELETE /api/menu-items` on the collection) |
@@ -469,7 +480,8 @@ curl -s -X PATCH "$BASE/api/orders/1" \
 ```
 
 The crew member may send `status` and nothing else; the same call with `"delivery_crew"` in the
-payload is a 400.
+payload is a 400. These calls only work on an order **assigned to that crew member** — a crew
+member who touches an order assigned to somebody else gets a 403.
 
 ### 7. Manage the menu as a manager
 
@@ -605,5 +617,8 @@ raises a 500 for a slash-less `POST` when `DEBUG=True` and `CommonMiddleware` is
 serves both forms, so nothing is registered twice and no request is ever redirected.
 
 **There is no automated test suite.** Verification for this project was done by hand, with
-`curl`, over the whole matrix above; the results were recorded in the task report. The code is
-deliberately comment-free, so this README and the design document are the documentation.
+`curl`, over every cell of the matrix above. The evidence ships with this README: the
+**Endpoint reference** table lists the status code observed for every request × role cell, the
+**Peer-review checklist** lists the observed code for each of the 21 grading criteria, and every
+example in this document was executed against the running server before it was written down. The
+code is deliberately comment-free, so this README and the design document are the documentation.
