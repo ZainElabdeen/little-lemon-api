@@ -36,11 +36,6 @@ User = get_user_model()
 
 
 def paginated_response(queryset, serializer_class, request):
-    """The standard DRF pagination envelope for a list endpoint (spec §5.4).
-
-    Every list endpoint in this API answers with the same shape, so the
-    pagination glue lives here once instead of being copy-pasted per view.
-    """
     paginator = LittleLemonPagination()
     page = paginator.paginate_queryset(queryset, request)
     if page is not None:
@@ -49,8 +44,6 @@ def paginated_response(queryset, serializer_class, request):
 
 
 class MenuItemViewSet(viewsets.ModelViewSet):
-    """Menu items: readable by any authenticated user, writable by managers only."""
-
     queryset = MenuItem.objects.all()
     serializer_class = MenuItemSerializer
     filterset_class = MenuItemFilter
@@ -63,7 +56,6 @@ class MenuItemViewSet(viewsets.ModelViewSet):
         return [IsManager()]
 
     def destroy(self, request, *args, **kwargs):
-        """Delete a menu item and answer 200 (not DRF's default 204)."""
         instance = self.get_object()
         item_id = instance.pk
         self.perform_destroy(instance)
@@ -87,8 +79,6 @@ class CategoryListView(APIView):
 
 
 class BaseGroupUserViewSet(viewsets.ViewSet):
-    """Lists, adds and removes the members of one Django group."""
-
     group_name = ""
     permission_classes = [IsManager]
 
@@ -124,8 +114,6 @@ class BaseGroupUserViewSet(viewsets.ViewSet):
         )
 
     def _resolve_user(self, payload):
-        # `request.data` is whatever the client sent: a list or a string body
-        # would blow up on `.get()`, so anything but a mapping is "not found".
         if not isinstance(payload, dict):
             return None
         username = payload.get("username")
@@ -134,10 +122,6 @@ class BaseGroupUserViewSet(viewsets.ViewSet):
             return User.objects.filter(username=str(username)).first()
         if user_id is not None:
             reference = str(user_id)
-            # Only ASCII digits can be a user id: `int()` converts them without
-            # raising, while `str.isdigit()` is also true for Unicode ordinal
-            # digits such as '²' that `int()` rejects with a ValueError.
-            # Anything else is treated as a username.
             if reference.isascii() and reference.isdigit():
                 return User.objects.filter(pk=int(reference)).first()
             return User.objects.filter(username=reference).first()
@@ -153,8 +137,6 @@ class DeliveryCrewUserViewSet(BaseGroupUserViewSet):
 
 
 class CartItemView(APIView):
-    """The authenticated customer's cart. Collection-level only — no {id} route."""
-
     permission_classes = [IsCustomer]
 
     def get(self, request):
@@ -181,9 +163,6 @@ class CartItemView(APIView):
 
 
 class OrderViewSet(viewsets.ModelViewSet):
-    """Customers place and read their own orders, managers read all and assign
-    delivery crew, delivery crew read their assignments and update status only."""
-
     serializer_class = OrderSerializer
     filterset_class = OrderFilter
     ordering_fields = ["id", "status", "total", "created_at"]
@@ -195,11 +174,6 @@ class OrderViewSet(viewsets.ModelViewSet):
         if self.action == "destroy":
             return [IsManager()]
         if self.action in ("update", "partial_update"):
-            # Order writes are role-gated: a manager may write anything, a
-            # delivery crew member may write the status of an order assigned
-            # to them, and a customer may not write any order at all - not
-            # even one of their own. An anonymous caller is turned into a 401
-            # by DRF because no authenticator succeeded.
             if is_delivery_crew(self.request.user):
                 return [IsDeliveryCrew()]
             return [IsManager()]
@@ -214,16 +188,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         return Order.objects.filter(user=user)
 
     def get_object(self):
-        # Look up across all orders, not the role-scoped queryset, so a missing
-        # order is 404 while an existing but forbidden one is 403.
         try:
             order = get_object_or_404(Order, pk=self.kwargs["pk"])
         except (TypeError, ValueError):
-            # A pk that is not an integer (the router's lookup pattern accepts
-            # any non-slash characters) raises out of the query, not a
-            # "not found" - a missing resource must still be a 404. The
-            # message is the one `get_object_or_404` uses, so a missing order
-            # reads the same however the id was mangled.
             raise Http404(
                 f"No {Order._meta.object_name} matches the given query."
             ) from None
@@ -275,9 +242,6 @@ class OrderViewSet(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         order = self.get_object()
         if is_delivery_crew(request.user) and request.method == "PUT":
-            # Only `PUT` is rejected outright: DRF's `partial_update` delegates
-            # to this method, so a blanket check would also reject the crew's
-            # status-only `PATCH` with a 400.
             raise ValidationError(
                 {"detail": "Delivery crew may only PATCH the 'status' field."}
             )
@@ -291,17 +255,11 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         order = self.get_object()
-        # The primary key is read before the delete, because Django clears it
-        # on the deleted instance.
         order_id = order.id
         order.delete()
         return Response({"detail": f"Order {order_id} was deleted."})
 
     def _validate_crew_payload(self, request):
-        # `request.data` is whatever the parser produced: a JSON body of
-        # `[1, 2, 3]` (or a bare string or number) is a list/str, which has
-        # no `.keys()` - reading them unguarded would turn a bad payload into
-        # a 500 instead of a 400.
         if not isinstance(request.data, dict):
             raise ValidationError(
                 {"detail": "Expected an object with a 'status' field."}
@@ -317,8 +275,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
 
 class LittleLemonUserViewSet(djoser_views.UserViewSet):
-    """Djoser's user viewset, mounted on our router so `me` lands on
-    /api/users/users/me/ and answers with and without a trailing slash."""
+    ""
 
 
 class LittleLemonTokenCreateView(djoser_views.TokenCreateView):

@@ -154,8 +154,6 @@ REST_FRAMEWORK = {
     },
 }
 
-# Djoser renders our serializers instead of its own. The dotted paths are
-# resolved lazily, so they are safe to write here.
 DJOSER = {
     "SEND_ACTIVATION_EMAIL": False,
     "SEND_CONFIRMATION_EMAIL": False,

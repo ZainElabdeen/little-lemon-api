@@ -1,15 +1,3 @@
-"""Seed the Little Lemon demo data set.
-
-The command is idempotent *and* declarative: re-running it restores the seeded
-state exactly, including every seeded user's group membership. A task that
-temporarily promotes a customer to manager can therefore re-run this command to
-get back to the baseline instead of leaving the promoted membership behind.
-
-Only ``admin`` is a superuser/staff member. Managers are group managers only
-(``is_staff`` stays ``False``); the separate superuser covers Django-admin
-access.
-"""
-
 from decimal import Decimal
 
 from django.contrib.auth.models import Group, User
@@ -19,7 +7,6 @@ from django.db import transaction
 from LittleLemonAPI.models import CartItem, MenuItem, Order, OrderItem
 from LittleLemonAPI.permissions import DELIVERY_CREW_GROUP, MANAGER_GROUP
 
-# username, password, group names, is_staff, is_superuser
 SEED_USERS = (
     ("admin", "AdminPass123!", (), True, True),
     ("customer1", "CustomerPass123!", (), False, False),
@@ -30,7 +17,6 @@ SEED_USERS = (
     ("crew2", "CrewPass123!", (DELIVERY_CREW_GROUP,), False, False),
 )
 
-# name, price, description, category
 SEED_MENU_ITEMS = (
     (
         "Greek Salad",
@@ -104,9 +90,6 @@ class Command(BaseCommand):
         )
 
     def _reset(self):
-        """Clear app data, keeping superusers (admin) in place."""
-        # Count first: delete() also reports cascaded rows, which would blur
-        # the per-model numbers.
         cart_items = CartItem.objects.count()
         order_items = OrderItem.objects.count()
         orders = Order.objects.count()
@@ -125,7 +108,6 @@ class Command(BaseCommand):
         )
 
     def _seed_users(self):
-        """Create/update the seeded accounts and set their groups declaratively."""
         groups = {
             name: Group.objects.get_or_create(name=name)[0]
             for name in (MANAGER_GROUP, DELIVERY_CREW_GROUP)
@@ -147,15 +129,11 @@ class Command(BaseCommand):
             user.set_password(password)
             user.save()
 
-            # Declarative: the user's groups are exactly the seeded ones - any
-            # extra membership (e.g. a customer temporarily promoted to manager)
-            # is removed again.
             user.groups.set([groups[name] for name in group_names])
 
         return created_count, updated_count
 
     def _seed_menu_items(self):
-        """Create/update the seeded menu items."""
         created_count = 0
         updated_count = 0
 
@@ -174,7 +152,6 @@ class Command(BaseCommand):
             item.category = category
             item.save()
 
-            # Collapse duplicate rows that share a seeded name.
             existing.exclude(pk=item.pk).delete()
 
         return created_count, updated_count

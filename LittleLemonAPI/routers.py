@@ -2,14 +2,6 @@ from rest_framework.routers import DefaultRouter, DynamicRoute, Route
 
 
 class LittleLemonRouter(DefaultRouter):
-    """DefaultRouter whose routes accept an optional trailing slash.
-
-    With APPEND_SLASH = False a slash-less path must match the route regex
-    itself, otherwise it 404s (and Django raises a 500 for a slash-less POST
-    while DEBUG is on). Making the slash optional in the regex lets one
-    pattern serve both /path and /path/.
-    """
-
     include_format_suffixes = False
 
     routes = [
