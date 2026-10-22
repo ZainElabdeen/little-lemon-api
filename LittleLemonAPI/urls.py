@@ -3,6 +3,7 @@ from django.urls import include, path
 from .routers import LittleLemonRouter
 from .views import (
     CartItemView,
+    CategoryListView,
     DeliveryCrewUserViewSet,
     LittleLemonUserViewSet,
     ManagerUserViewSet,
@@ -24,6 +25,8 @@ urlpatterns = [
     path("", include(router.urls)),
     path("cart/menu-items", CartItemView.as_view(), name="cart-items"),
     path("cart/menu-items/", CartItemView.as_view(), name="cart-items-slash"),
+    path("categories", CategoryListView.as_view(), name="categories"),
+    path("categories/", CategoryListView.as_view(), name="categories-slash"),
     # Registration is bound to the `create` action explicitly: djoser picks
     # the user_create serializer from `self.action`, so the action has to be
     # named rather than routed through a generic view.

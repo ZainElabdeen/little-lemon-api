@@ -195,3 +195,7 @@ class LittleLemonTokenSerializer(serializers.Serializer):
 
     token = serializers.CharField(source="key", read_only=True)
     auth_token = serializers.CharField(source="key", read_only=True)
+
+
+class CategorySerializer(serializers.Serializer):
+    category = serializers.CharField()

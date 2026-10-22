@@ -26,6 +26,7 @@ from .permissions import (
 )
 from .serializers import (
     CartItemSerializer,
+    CategorySerializer,
     GroupUserSerializer,
     MenuItemSerializer,
     OrderSerializer,
@@ -70,6 +71,19 @@ class MenuItemViewSet(viewsets.ModelViewSet):
             {"detail": f"Menu item {item_id} was deleted."},
             status=status.HTTP_200_OK,
         )
+
+
+class CategoryListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        categories = (
+            MenuItem.objects.exclude(category="")
+            .values("category")
+            .distinct()
+            .order_by("category")
+        )
+        return paginated_response(categories, CategorySerializer, request)
 
 
 class BaseGroupUserViewSet(viewsets.ViewSet):
